@@ -97,7 +97,7 @@ function sr_jscript() {
       document.getElementById('top_placeholder').innerHTML=content;
     }
     if (data['data'].content_type == "image") {
-      content='<img src="http://csnap.colocdn.com/pics/' + data['data'].file_name + '"/>';
+      content='<img src="http://cdn.snrly.com/pics/' + data['data'].file_name + '"/>';
       document.getElementById('top_placeholder').innerHTML=content;
     }
   });
