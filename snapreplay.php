@@ -1,107 +1,135 @@
 <?php
 /*
 Plugin Name: SnapReplay
-Plugin URI: http://code.google.com/p/cd34-wordpress/wiki/SnapReplay
-Description: Display latest Event/Venue picture in sidebar
+Plugin URI: https://github.com/cd34/wordpress-snapreplay
+Description: Display latest Event/Venue picture in sidebar via live stream
 Author: Chris Davies
-Version: 0.2
-Author URI: http://cd34.com/
-
-Update Event Title on page
-
+Version: 0.3
+Author URI: https://cd34.com/
 */
 
-function widget_sr_control() {
-?>
-<?php
+class SnapReplay_Widget extends WP_Widget {
+
+	public function __construct() {
+		parent::__construct(
+			'snapreplay_widget',
+			'SnapReplay Widget',
+			array( 'description' => 'Display live SnapReplay event/venue stream' )
+		);
+	}
+
+	public function widget( $args, $instance ) {
+		$stream_id = absint( get_option( 'snapreplay-stream-id', 0 ) );
+		if ( ! $stream_id ) {
+			return;
+		}
+		echo $args['before_widget'];
+		echo $args['before_title'];
+		echo '<a href="https://snapreplay.com/event_id/' . esc_attr( $stream_id ) . '">SnapReplay Live Stream</a>';
+		echo $args['after_title'];
+		echo '<div id="snapreplay-placeholder"></div>';
+		echo $args['after_widget'];
+	}
 }
 
-function widget_sr($args) {
-?>
-<h3><a href="http://snapreplay.com/event_id/<?php echo get_option('snapreplay-stream-id'); ?>">SnapReplay Live Stream</a></h3>
-<div id="top_placeholder"></div>
-<?php
+function snapreplay_register_widget() {
+	register_widget( 'SnapReplay_Widget' );
 }
-	
-function widget_sr_init() {
-  if ( !function_exists('register_sidebar_widget') ||
-       !function_exists('register_widget_control') ) {
-    return;
-  }
+add_action( 'widgets_init', 'snapreplay_register_widget' );
 
-  register_sidebar_widget('SnapReplay Widget', 'widget_sr');
-
+function snapreplay_admin_menu() {
+	add_options_page(
+		'SnapReplay Widget Options',
+		'SnapReplay Widget',
+		'manage_options',
+		'sr-widget-options',
+		'snapreplay_options_page'
+	);
 }
+add_action( 'admin_menu', 'snapreplay_admin_menu' );
 
-function sr_widget_menu() {
-  add_options_page('SnapReplay Widget Options', 'SnapReplay Widget', 'manage_options', 'sr-widget-options', 'sr_widget_options');
+function snapreplay_admin_init() {
+	register_setting( 'snapreplay', 'snapreplay-stream-id', array(
+		'type'              => 'integer',
+		'sanitize_callback' => 'absint',
+		'default'           => 0,
+	) );
 }
+add_action( 'admin_init', 'snapreplay_admin_init' );
 
-function sr_widget_options() {
-    if (!current_user_can('manage_options'))  {
-        wp_die( __('You do not have sufficient permissions to access this page.') );
-    }
-?>
-
-<div class="wrap">
-<h2>SnapReplay Widget setup</h2>
-<p>
-<a href="http://snapreplay.com/">SnapReplay.com</a> is a site that allows
-you to crowdsource photos from events. This plugin allows you to select
-an Event or Venue and display the last updated stream item Live in your
-sidebar.
-</p>
-<p>
-You need to configure the Event or Venue ID so that the widget knows
-which stream to follow.
-</p>
-<form method="post" action="options.php">
-    <?php settings_fields( 'snapreplay' ); ?>
-
-    <table class="form-table">
-        <tr valign="top">
-        <th scope="row">Event or Venue ID</th>
-        <td><input type="text" name="snapreplay-stream-id" value="<?php echo get_option('snapreplay-stream-id'); ?>" /></td>
-        </tr>
-    </table>
-
-<p class="submit">
-<input type="submit" class="button-primary" value="<?php _e('Save Changes') ?>" />
-</p>
-</form>
-<?php
-}
-
-function sr_widget_init() {
-  register_setting('snapreplay', 'snapreplay-stream-id', 'intval');
-  update_option('snapreplay-stream-id', 1);
+function snapreplay_options_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'You do not have sufficient permissions to access this page.' ) );
+	}
+	?>
+	<div class="wrap">
+		<h2>SnapReplay Widget Setup</h2>
+		<p>
+			<a href="https://snapreplay.com/">SnapReplay.com</a> is a site that allows
+			you to crowdsource photos from events. This plugin allows you to select
+			an Event or Venue and display the last updated stream item live in your
+			sidebar.
+		</p>
+		<p>
+			You need to configure the Event or Venue ID so that the widget knows
+			which stream to follow.
+		</p>
+		<form method="post" action="options.php">
+			<?php settings_fields( 'snapreplay' ); ?>
+			<table class="form-table">
+				<tr valign="top">
+					<th scope="row">Event or Venue ID</th>
+					<td><input type="text" name="snapreplay-stream-id" value="<?php echo esc_attr( get_option( 'snapreplay-stream-id', '' ) ); ?>" /></td>
+				</tr>
+			</table>
+			<p class="submit">
+				<input type="submit" class="button-primary" value="<?php esc_attr_e( 'Save Changes' ); ?>" />
+			</p>
+		</form>
+	</div>
+	<?php
 }
 
-add_action('init', 'widget_sr_init');
+function snapreplay_enqueue_scripts() {
+	$stream_id = absint( get_option( 'snapreplay-stream-id', 0 ) );
+	if ( ! $stream_id || ! is_active_widget( false, false, 'snapreplay_widget' ) ) {
+		return;
+	}
 
-add_action('admin_menu', 'sr_widget_menu');
-add_action('admin_init', 'sr_widget_init');
+	wp_enqueue_script(
+		'snapreplay-socketio',
+		'https://stream.snapreplay.com/socket.io/socket.io.js',
+		array(),
+		null,
+		true
+	);
 
-add_action('wp_footer', 'sr_jscript');
-
-function sr_jscript() {
-?>
-<script type="text/javaScript" src="http://stream.snapreplay.com/socket.io/socket.io.js"></script>
-<script type="text/javaScript">
-<!--
-  var socket = io.connect('http://stream.snapreplay.com');
-  socket.emit('newchan', {'chan':<?php echo get_option('snapreplay-stream-id'); ?>});
-  socket.on('s-<?php echo get_option('snapreplay-stream-id'); ?>', function (data) {
-    if (data['data'].content_type == "text") {
-      content = data['data'].display_name + ' says, ' + data['data'].content;
-      document.getElementById('top_placeholder').innerHTML=content;
-    }
-    if (data['data'].content_type == "image") {
-      content='<img src="http://cdn.snrly.com/pics/' + data['data'].file_name + '"/>';
-      document.getElementById('top_placeholder').innerHTML=content;
-    }
-  });
-// -->
-</script>
-<?php
+	wp_add_inline_script( 'snapreplay-socketio', sprintf(
+		'(function() {
+			var streamId = %s;
+			var socket = io.connect("https://stream.snapreplay.com");
+			socket.emit("newchan", {"chan": streamId});
+			socket.on("s-" + streamId, function(data) {
+				var el = document.getElementById("snapreplay-placeholder");
+				if (!el || !data || !data.data) return;
+				var d = data.data;
+				if (d.content_type === "text") {
+					el.textContent = "";
+					var text = document.createTextNode(
+						(d.display_name || "") + " says, " + (d.content || "")
+					);
+					el.appendChild(text);
+				}
+				if (d.content_type === "image" && d.file_name) {
+					el.textContent = "";
+					var img = document.createElement("img");
+					img.src = "https://cdn.snrly.com/pics/" + encodeURIComponent(d.file_name);
+					img.alt = "SnapReplay image";
+					el.appendChild(img);
+				}
+			});
+		})();',
+		wp_json_encode( $stream_id )
+	) );
 }
+add_action( 'wp_enqueue_scripts', 'snapreplay_enqueue_scripts' );
